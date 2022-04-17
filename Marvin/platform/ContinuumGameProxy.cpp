@@ -298,8 +298,39 @@ void ContinuumGameProxy::FetchWeapons() {
     u32 weapon_data = *(u32*)(weapon_ptrs + i * 4);
 
     WeaponMemory* data = (WeaponMemory*)(weapon_data);
+    WeaponType type = data->data.type;
 
-    weapons_.emplace_back(data);
+    u32 total_ticks = 0;
+
+    switch (type) { 
+        case WeaponType::Bomb:
+        case WeaponType::ProximityBomb:
+        case WeaponType::Thor: {
+          total_ticks = this->GetSettings().BombAliveTime;
+          if (data->data.alternate) {
+            total_ticks = this->GetSettings().MineAliveTime;
+          }
+        } break;
+        case WeaponType::Burst:
+        case WeaponType::Bullet:
+        case WeaponType::BouncingBullet: {
+          total_ticks = this->GetSettings().BulletAliveTime;
+        } break;
+        case WeaponType::Repel: {
+          total_ticks = this->GetSettings().RepelTime;
+        } break;
+        case WeaponType::Decoy: {
+          total_ticks = this->GetSettings().DecoyAliveTime;
+        } break;
+        default: {
+          total_ticks = this->GetSettings().BulletAliveTime;
+        } break;
+    }
+
+    u32 alive_ticks = data->alive_ticks;
+    if (alive_ticks > total_ticks) alive_ticks = total_ticks;
+
+    weapons_.emplace_back(data, total_ticks - alive_ticks);
   }
 }
 

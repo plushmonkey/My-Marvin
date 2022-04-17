@@ -22,7 +22,8 @@ class InfluenceMap {
 
   void Update(GameProxy& game, std::vector<Player> enemy_list);
 
-  void CastInfluence(const Map& map, const Vector2f& from, const Vector2f& direction, float max_length, float value);
+  void CastWeapon(const Map& map, Vector2f from, Vector2f direction, float max_length, float value, Weapon* weapon);
+  void CastInfluence(const Map& map, Vector2f from, Vector2f direction, float max_length, float value);
 
  private:
   float* tiles;
