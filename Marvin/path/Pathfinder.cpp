@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <queue>
 #include <unordered_set>
 
 #include "../Bot.h"
@@ -11,7 +12,7 @@
 extern std::unique_ptr<marvin::Bot> bot;
 
 /* when creating map weights, a single tile with a weight of 10 equals 10 tiles with a weight of 1,
-or 5 tiles with a weight of 2, and so on. If a tile has a weight of 9, the pathfinder will need to step into 
+or 5 tiles with a weight of 2, and so on. If a tile has a weight of 9, the pathfinder will need to step into
 9 tiles with a weight of 1 before stepping into that tile. */
 
 namespace marvin {
@@ -123,10 +124,10 @@ NodePoint ToNodePoint(const Vector2f v, float radius, const Map& map) {
     int check_diameter = (int)((radius + 0.5f) * 2) + 2;
 
     for (int x = 0; x < check_diameter; x++) {
-      for (int y = 0; y < check_diameter; y++) { 
-          if (x == 0 && y == 0) {
+      for (int y = 0; y < check_diameter; y++) {
+        if (x == 0 && y == 0) {
           continue;
-          }
+        }
         Vector2f check_pos(np.x - (float)x, np.y - (float)y);
         if (map.CanOccupy(check_pos, radius)) {
           np.y -= y;
@@ -256,8 +257,7 @@ std::vector<Vector2f> Pathfinder::SmoothPath(const std::vector<Vector2f>& path, 
   std::vector<Vector2f> result = path;
   return result;
 
-
- for (std::size_t i = 0; i < result.size(); i++) {
+  for (std::size_t i = 0; i < result.size(); i++) {
     std::size_t next = i + 1;
 
     if (next == result.size() - 1) {
@@ -270,12 +270,10 @@ std::vector<Vector2f> Pathfinder::SmoothPath(const std::vector<Vector2f>& path, 
       result.erase(result.begin() + next);
       i--;
     }
- }
+  }
 
   return result;
 }
-
-
 
 std::vector<Vector2f> Pathfinder::CreatePath(std::vector<Vector2f> path, Vector2f from, Vector2f to, float radius) {
   bool build = true;
@@ -316,7 +314,7 @@ std::vector<Vector2f> Pathfinder::CreatePath(std::vector<Vector2f> path, Vector2
     }
     //#endif
     new_path = FindPath(processor_->GetGame().GetMap(), mines, from, to, radius);
-   // new_path = SmoothPath(new_path, processor_->GetGame().GetMap(), radius);
+    // new_path = SmoothPath(new_path, processor_->GetGame().GetMap(), radius);
   }
 
   return new_path;
@@ -343,8 +341,6 @@ float Pathfinder::GetWallDistance(const Map& map, u16 x, u16 y, u16 radius) {
 }
 
 void Pathfinder::CreateMapWeights(const Map& map) {
-
-
   for (u16 y = 0; y < 1024; ++y) {
     for (u16 x = 0; x < 1024; ++x) {
       if (map.IsSolid(x, y)) continue;
@@ -354,16 +350,17 @@ void Pathfinder::CreateMapWeights(const Map& map) {
       int close_distance = 8;
 
       /* When visualizing, flooring this value causes a square ring around the current tile to have the same weight.
-      The idea is that the ship should give a diagonal neighbor the same amount of weight. This should work with any size 
-      ship since the CanOccupy check pushes the paths nodes into the wall when the bot is pathing through a tight space. 
-      Known Issue: 3 tile gaps and 4 tile gaps will carry the same weight since each tiles closest wall is 2 tiles away.*/
+      The idea is that the ship should give a diagonal neighbor the same amount of weight. This should work with any
+      size ship since the CanOccupy check pushes the paths nodes into the wall when the bot is pathing through a tight
+      space. Known Issue: 3 tile gaps and 4 tile gaps will carry the same weight since each tiles closest wall is 2
+      tiles away.*/
 
       float distance = std::floor(GetWallDistance(map, x, y, close_distance));
 
-      //nodes are initialized with a weight of 1.0f 
+      // nodes are initialized with a weight of 1.0f
       if (distance <= close_distance) {
         float weight = 8.0f / distance;
-        //paths directly next to a wall will be a last resort, 1 tile from wall very unlikely
+        // paths directly next to a wall will be a last resort, 1 tile from wall very unlikely
         node->weight = (float)std::pow(weight, 4.0);
         node->previous_weight = node->weight;
       }
