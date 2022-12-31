@@ -84,6 +84,8 @@ struct RegionFiller {
   void FillSolid();
   void TraverseSolid(const Vector2f& from, MapCoord to);
 
+  bool IsEmptyBaseTile(const Vector2f& position) const;
+
   const Map& map;
   RegionIndex region_index;
   float radius;

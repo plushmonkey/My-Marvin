@@ -78,6 +78,8 @@ void RegionFiller::FillSolid() {
 
     stack.pop_back();
 
+    if (IsEmptyBaseTile(current_pos)) continue;
+
     const MapCoord west(current.x - 1, current.y);
     const MapCoord northwest(current.x - 1, current.y - 1);
     const MapCoord southwest(current.x - 1, current.y + 1);
@@ -107,11 +109,32 @@ void RegionFiller::TraverseSolid(const Vector2f& from, MapCoord to) {
     stack.push_back(to);
     potential_edges[to_index] = kUndefinedRegion;
 
-    // Add an edge if this tile is not traversable and it's not already one of the empty region tiles.
-    if (coord_regions[to_index] != region_index && !map.CanOccupy(Vector2f(to.x, to.y), 0.8f)) {
-      edges[to_index].AddOwner(region_index);
+    // Add an edge if this tile is not part of the empty space within the base
+    if (coord_regions[to_index] != region_index) {
+      Vector2f to_pos = Vector2f((float)to.x, (float)to.y);
+
+      if (!IsEmptyBaseTile(to_pos)) {
+        edges[to_index].AddOwner(region_index);
+      }
     }
   }
+}
+
+bool RegionFiller::IsEmptyBaseTile(const Vector2f& position) const {
+  if (map.IsSolid(position)) return false;
+
+  OccupyRect rect = map.GetPossibleOccupyRect(position, radius);
+
+  if (rect.occupy) {
+    size_t top_index = rect.start_y * 1024 + rect.start_x;
+    size_t bottom_index = rect.end_y * 1024 + rect.end_x;
+
+    if (coord_regions[top_index] == region_index || coord_regions[bottom_index] == region_index) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // this method is not working at least for Extreme Games
