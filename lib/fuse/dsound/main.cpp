@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include <fuse/Fuse.h>
+
 std::ofstream debug_log;
 
 static std::string GetLocalPath() {
@@ -83,12 +85,12 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD dwReason, LPVOID reserved) {
 
       fuse::g_DirectSound = fuse::DirectSound::Load(dsound);
 
-      //HMODULE marvin = LoadLibrary((GetLocalPath() + "\\Marvin.dll").c_str());
+      fuse::Fuse::Get().Inject();
 
       InitializeLoader();
 
-      //size_t hook_count = fuse::Fuse::Get().GetHooks().size();
-     // debug_log << "Hook count: " << hook_count << std::endl;
+      size_t hook_count = fuse::Fuse::Get().GetHooks().size();
+      debug_log << "Hook count: " << hook_count << std::endl;
     } break;
     case DLL_PROCESS_DETACH: {
       FreeLibrary(dsound);

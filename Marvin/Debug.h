@@ -5,6 +5,8 @@
 #include <vector>
 #include <bitset>
 
+#include <fstream>
+
 #include "Vector2f.h"
 #include "MapCoord.h"
 #include "platform/Platform.h"
@@ -96,8 +98,8 @@ class LogFile {
   std::ofstream log;
 };
 
-extern std::ofstream log;
-//extern LogFile log;
+//extern std::ofstream log;
+extern LogFile log;
 
 struct RenderState {
   static const bool kDisplayDebugText;

@@ -1,249 +1,63 @@
 #include "platform/Platform.h"
 //
 #include <ddraw.h>
-#include <detours.h>
+#include <fuse/Fuse.h>
 
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <filesystem>
 
-#include "GameProxy.h"
 #include "Bot.h"
 #include "Debug.h"
-#include "Time.h"
+#include "GameProxy.h"
 #include "KeyController.h"
+#include "Time.h"
 
-
-#define UM_SETTEXT WM_USER + 0x69
+using namespace fuse;
 
 std::string kEnabledText = "Continuum (enabled) - ";
 std::string kDisabledText = "Continuum (disabled) - ";
-std::string name;
 
 using time_clock = std::chrono::high_resolution_clock;
 using time_point = time_clock::time_point;
 using seconds = std::chrono::duration<float>;
 
-static time_point g_LastUpdateTime;
-static time_point g_StartTime = time_clock::now();
+std::unique_ptr<marvin::Bot> bot;
 
-std::unique_ptr<marvin::Bot> bot = nullptr;
-std::shared_ptr<marvin::ContinuumGameProxy> game = nullptr;
+HWND g_hWnd = 0;
 
-static bool enabled = true;
-static bool memory_initialized = false;
-static bool initialize_debug = true;
+class MarvinHook final : public HookInjection {
+ public:
+  const char* GetHookName() override { return "Marvin"; }
 
-// This function needs to be called whenever anything changes in Continuum's memory.
-// Continuum keeps track of its memory by calculating a checksum over it. Any changes to the memory outside of the
-// normal game update would be caught. So we bypass this by manually calculating the crc at the end of the bot update
-// and replacing the expected crc in memory.
-void UpdateCRC() {
-  typedef u32(__fastcall * CRCFunction)(void* This, void* thiscall_garbage);
-  CRCFunction func_ptr = (CRCFunction)0x43BB80;
+  void OnUpdate() override {
+    time_point now = time_clock::now();
+    seconds dt = now - last_update_time;
+    seconds sec = now - start_time;
 
-  u32 game_addr = (*(u32*)0x4c1afc) + 0x127ec;
-  u32 result = func_ptr((void*)game_addr, 0);
+    g_hWnd = Fuse::Get().GetGameWindowHandle();
 
-  *(u32*)(game_addr + 0x6d4) = result;
-}
-
-void CreateBot() {
-  game = std::make_shared<marvin::ContinuumGameProxy>();
-  auto game2(game);
-  bot = std::make_unique<marvin::Bot>(std::move(game2));
-}
-
-// text must not be stack allocated
-void SafeSetWindowText(HWND hwnd, const char* text) {
-  PostMessage(hwnd, UM_SETTEXT, NULL, (LPARAM)text);
-}
-
-bool GameLoaded() {
-  u32 game_addr = *(u32*)0x4C1AFC;
-
-  if (game_addr) {
-    // Wait for map to load
-    return *(u32*)(game_addr + 0x127ec + 0x6C4) != 0;
-  }
-
-  return false;
-}
-
-static SHORT(WINAPI* RealGetAsyncKeyState)(int vKey) = GetAsyncKeyState;
-
-static BOOL(WINAPI* RealPeekMessageA)(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax,
-                                      UINT wRemoveMsg) = PeekMessageA;
-static BOOL(WINAPI* RealGetMessageA)(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax) = GetMessageA;
-
-static int(WINAPI* RealMessageBoxA)(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType) = MessageBoxA;
-
-static HRESULT(STDMETHODCALLTYPE* RealBlt)(LPDIRECTDRAWSURFACE, LPRECT, LPDIRECTDRAWSURFACE, LPRECT, DWORD, LPDDBLTFX);
-
-HRESULT STDMETHODCALLTYPE OverrideBlt(LPDIRECTDRAWSURFACE surface, LPRECT dest_rect, LPDIRECTDRAWSURFACE next_surface,
-                                      LPRECT src_rect, DWORD flags, LPDDBLTFX fx) {
-
-    if (!game->UpdateBaseAddress()) {
-      return RealBlt(surface, dest_rect, next_surface, src_rect, flags, fx);
-    } 
-
-    if (game->IsOnMenu()) {
-      return RealBlt(surface, dest_rect, next_surface, src_rect, flags, fx);
+    // Initialize marvin if we don't have a bot created yet, but we have the map downloaded and we are in game.
+    if (!bot && Fuse::Get().GetConnectState() == ConnectState::Playing) {
+      InitializeMarvin();
+      enabled = true;
     }
-
-  u32 graphics_addr = *(u32*)(0x4C1AFC) + 0x30;
-  LPDIRECTDRAWSURFACE primary_surface = (LPDIRECTDRAWSURFACE) * (u32*)(graphics_addr + 0x40);
-  LPDIRECTDRAWSURFACE back_surface = (LPDIRECTDRAWSURFACE) * (u32*)(graphics_addr + 0x44);
-
-  // Check if flipping. I guess there's a full screen blit instead of flip when running without vsync?
-  if (surface == primary_surface && next_surface == back_surface && fx == 0) {
-    marvin::g_RenderState.Render();
-  }
-
-  return RealBlt(surface, dest_rect, next_surface, src_rect, flags, fx);
-}
-
-int WINAPI OverrideMessageBoxA(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType) {
-  bool suppress = false;
-
-  // return 0 to supress message boxes 
-
-  if (suppress) {
-    return 0;
-  }
-
-  return RealMessageBoxA(hWnd, lpText, lpCaption, uType);
-}
-
-SHORT WINAPI OverrideGetAsyncKeyState(int vKey) {
-
- HWND g_hWnd = game->GetGameWindowHandle();
-
-#if DEBUG_USER_CONTROL
-  if (1) {
-#else
-  if (!enabled) {
-#endif
-
-    if (GetFocus() == g_hWnd) {
-      return RealGetAsyncKeyState(vKey);
-    }
-
-    return 0;
-  } else if (bot && bot->GetKeys().IsPressed(vKey)) {
-    return (SHORT)0x8000;
-  }
-
-  return 0;
-}
-
-
-// actions in the menu happen here
-// the dsound injection method will start here
-BOOL WINAPI OverrideGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax) { 
-
-  if (!game->UpdateBaseAddress()) {
-    return RealGetMessageA(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax);
-  } else {
-    memory_initialized = true;
-  }
-
-  // wipe the bot so it can be rebuit after entering the game
-  // if not there will be a memory error with fetch chat function
-  if (game->IsOnMenu()) {
-    bot = nullptr;
-    enabled = false;
-  }
-
-  return RealGetMessageA(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax);
-}
-
-// This is used to hook into the main update loop in Continuum so the bot can be
-// updated.
-//the marvin injection method will start here
-BOOL WINAPI OverridePeekMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg) {
-  BOOL result = 0;
-
-  if (!bot) {
-    CreateBot();
-    enabled = true;
-  }
-
-  #if 1
-  if (!game->UpdateBaseAddress()) {
-    return RealPeekMessageA(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
-  } else {
-    memory_initialized = true;
-  }
-  #endif
-
-  name = game->GetName();
-  marvin::ConnectState state = game->GetConnectState();
-
-  if (state != marvin::ConnectState::Playing) {
-    return RealPeekMessageA(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
-  }
-
-  if (initialize_debug) {
-    u32 graphics_addr = *(u32*)(0x4C1AFC) + 0x30;
-    LPDIRECTDRAWSURFACE surface = (LPDIRECTDRAWSURFACE) * (u32*)(graphics_addr + 0x44);
-    void** vtable = (*(void***)surface);
-    RealBlt = (HRESULT(STDMETHODCALLTYPE*)(LPDIRECTDRAWSURFACE surface, LPRECT, LPDIRECTDRAWSURFACE, LPRECT, DWORD,
-                                           LPDDBLTFX))vtable[5];
-
-#if DEBUG_RENDER
-    DetourRestoreAfterWith();
-
-    DetourTransactionBegin();
-    DetourUpdateThread(GetCurrentThread());
-    DetourAttach(&(PVOID&)RealBlt, OverrideBlt);
-    DetourTransactionCommit();
-#endif
-    initialize_debug = false;
-  }
-
-  HWND g_hWnd = game->GetGameWindowHandle();
-
-  time_point now = time_clock::now();
-  seconds dt = now - g_LastUpdateTime;
 
     // Check for key presses to enable/disable the bot.
     if (GetFocus() == g_hWnd) {
-      if (RealGetAsyncKeyState(VK_F10)) {
+      if (GetAsyncKeyState(VK_F10)) {
         enabled = false;
-        SafeSetWindowText(g_hWnd, (kDisabledText + name).c_str());
-      } else if (RealGetAsyncKeyState(VK_F9)) {
+        SetWindowText(g_hWnd, kDisabledText.c_str());
+      } else if (GetAsyncKeyState(VK_F9)) {
         enabled = true;
-        SafeSetWindowText(g_hWnd, (kEnabledText + name).c_str());
+        SetWindowText(g_hWnd, kEnabledText.c_str());
       }
     }
-    
+
     if (enabled) {
-
-      for (marvin::ChatMessage chat : game->GetCurrentChat()) {
-
-        std::string name = game->GetPlayer().name;
-        std::string eg_msg = "[ " + name + " ]";
-        std::string eg_packet_loss_msg = "Packet loss too high for you to enter the game.";
-        std::string hs_lag_msg = "You are too lagged to play in this arena.";
-
-        bool eg_lag_locked =
-            chat.message.compare(0, 4 + name.size(), eg_msg) == 0 && game->GetZone() == marvin::Zone::ExtremeGames;
-
-        bool eg_locked_in_spec =
-            eg_lag_locked || chat.message == eg_packet_loss_msg && game->GetZone() == marvin::Zone::ExtremeGames;
-
-        bool hs_locked_in_spec = chat.message == hs_lag_msg && game->GetZone() == marvin::Zone::Hyperspace;
-
-        //bool disconected = chat.message.compare(0, 9, "WARNING: ") == 0;
-
-        if (chat.type == marvin::ChatType::Arena) {
-          if (state == marvin::ConnectState::Disconnected || eg_locked_in_spec || hs_locked_in_spec) {
-            game->ExitGame();
-            return RealPeekMessageA(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
-          }
-        }
+      if (ProcessChat()) {
+        return;
       }
 
       if (dt.count() > (float)(1.0f / bot->GetUpdateInterval())) {
@@ -251,100 +65,145 @@ BOOL WINAPI OverridePeekMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UIN
         marvin::g_RenderState.renderable_texts.clear();
         marvin::g_RenderState.renderable_lines.clear();
 #endif
-       
-        bot->Update(false, dt.count());
-        UpdateCRC(); 
-        g_LastUpdateTime = now;
+        if (bot) {
+          bot->Update(false, dt.count());
+          UpdateCRC();
+        }
+
+        last_update_time = now;
       }
     }
-    
-     result = RealPeekMessageA(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
 
-    if (result && lpMsg->message == UM_SETTEXT) {
-      SendMessage(g_hWnd, WM_SETTEXT, NULL, lpMsg->lParam);
+#if DEBUG_RENDER
+    marvin::g_RenderState.Render();
+#endif
+  }
+
+  bool OnMenuUpdate(BOOL hasMsg, LPMSG lpMsg, HWND hWnd) override {
+    // If we get a menu message pump update then we must be out of the game, so clean it up.
+    if (enabled) {
+      CleanupMarvin();
+      enabled = false;
     }
 
-  return result;
-}
-
-
-
-/*
-* The injector method calls this after the player is already logged into the game.
-* 
-* The dsound method also uses this but it's called when the game is in the menu or even before that,
-* A call to get the module base will return 0.
-*/ 
-extern "C" __declspec(dllexport) void InitializeMarvin() {
-  marvin::PerformanceTimer timer; 
-
-  //create a generic log file name for now
-  marvin::log.open("Marvin.log", std::ios::out | std::ios::trunc);
-  marvin::log << "INITIALIZE MARVIN - NEW TIMER: " + std::to_string(timer.GetElapsedTime()) + "\n";
-  
-  CreateBot();
-
-  
-
- #if 0  // can't dereference memory untill menu or game is loaded
-  u32 graphics_addr = *(u32*)(0x4C1AFC) + 0x30;
-  LPDIRECTDRAWSURFACE surface = (LPDIRECTDRAWSURFACE) * (u32*)(graphics_addr + 0x44);
-  void** vtable = (*(void***)surface);
-  RealBlt = (HRESULT(STDMETHODCALLTYPE*)(LPDIRECTDRAWSURFACE surface, LPRECT, LPDIRECTDRAWSURFACE, LPRECT, DWORD,
-     LPDDBLTFX))vtable[5];
-  #endif
-
-  
-  DetourRestoreAfterWith();
-
-  DetourTransactionBegin();
-  DetourUpdateThread(GetCurrentThread());
-  DetourAttach(&(PVOID&)RealGetAsyncKeyState, OverrideGetAsyncKeyState);
-  DetourAttach(&(PVOID&)RealPeekMessageA, OverridePeekMessageA);
-  DetourAttach(&(PVOID&)RealGetMessageA, OverrideGetMessageA);
-  DetourAttach(&(PVOID&)RealMessageBoxA, OverrideMessageBoxA);
-
-#if DEBUG_RENDER
-  //DetourAttach(&(PVOID&)RealBlt, OverrideBlt);
-#endif
-  DetourTransactionCommit();
-
-  marvin::log << "FINISH INITIALIZE MARVIN - TOTAL TIME: " + std::to_string(timer.TimeSinceConstruction()) + "\n";
-}
-
-extern "C" __declspec(dllexport) void CleanupMarvin() {
- // HWND g_hWnd = game->GetGameWindowHandle();
-  marvin::log << "CLEANUP MARVIN.\n";
-  DetourTransactionBegin();
-  DetourUpdateThread(GetCurrentThread());
-  DetourDetach(&(PVOID&)RealGetAsyncKeyState, OverrideGetAsyncKeyState);
-  DetourDetach(&(PVOID&)RealPeekMessageA, OverridePeekMessageA);
-  DetourDetach(&(PVOID&)RealGetMessageA, OverrideGetMessageA);
-  DetourDetach(&(PVOID&)RealMessageBoxA, OverrideMessageBoxA);
-#if DEBUG_RENDER
-  if (!initialize_debug) {
-      DetourDetach(&(PVOID&)RealBlt, OverrideBlt);
+    return false;
   }
+
+  virtual KeyState OnGetAsyncKeyState(int vKey) {
+    // Don't override the enable/disable keys.
+    if (vKey >= VK_F9 && vKey <= VK_F10) {
+      return {};
+    }
+
+#if DEBUG_USER_CONTROL
+    if (1) {
+#else
+    if (!enabled) {
 #endif
-  DetourTransactionCommit();
 
-  //SafeSetWindowText(g_hWnd, "Continuum");
-  bot = nullptr;
-  marvin::log << "CLEANUP MARVIN FINISHED.\n";
-  marvin::log.close();
-}
+      if (GetFocus() == g_hWnd) {
+        // We want to retain user control here so don't do anything.
+        return {};
+      }
 
-// the dsound file calls this using loadlibrary
+      // Force nothing being pressed when we don't have focus and bot isn't controlling itself.
+      return {true, false};
+    } else if (bot && bot->GetKeys().IsPressed(vKey)) {
+      // Force press the requested key since the bot says it should be pressed.
+      return {true, true};
+    }
+
+    // We want this to be forced off since the bot has control but doesn't want to press the key.
+    return {true, false};
+  }
+
+ private:
+  // This function needs to be called whenever anything changes in Continuum's memory.
+  // Continuum keeps track of its memory by calculating a checksum over it. Any changes to the memory outside of the
+  // normal game update would be caught. So we bypass this by manually calculating the crc at the end of the bot update
+  // and replacing the expected crc in memory.
+  void UpdateCRC() {
+    typedef u32(__fastcall * CRCFunction)(void* This, void* thiscall_garbage);
+    CRCFunction func_ptr = (CRCFunction)0x43BB80;
+
+    u32 game_addr = (*(u32*)0x4c1afc) + 0x127ec;
+    u32 result = func_ptr((void*)game_addr, 0);
+
+    *(u32*)(game_addr + 0x6d4) = result;
+  }
+
+  std::string CreateBot() {
+    // create pointer to game and pass the window handle
+    auto game = std::make_shared<marvin::ContinuumGameProxy>();
+
+    bot = std::make_unique<marvin::Bot>(std::move(game));
+
+    return bot->GetGame().GetName();
+  }
+
+  /* there are limitations on what win32 calls/actions can be made inside of this funcion call (DLLMain) */
+  void InitializeMarvin() {
+    marvin::PerformanceTimer timer;
+
+    std::string name = CreateBot();
+    marvin::log.Write("INITIALIZE MARVIN - NEW TIMER", timer.GetElapsedTime());
+
+    kEnabledText = "Continuum (enabled) - " + name;
+    kDisabledText = "Continuum (disabled) - " + name;
+
+    SetWindowText(g_hWnd, kEnabledText.c_str());
+
+    marvin::log.Write("FINISH INITIALIZE MARVIN - TOTAL TIME", timer.TimeSinceConstruction());
+  }
+
+  void CleanupMarvin() {
+    marvin::log.Write("CLEANUP MARVIN.");
+
+    SetWindowText(g_hWnd, "Continuum");
+    bot = nullptr;
+    marvin::log.Write("CLEANUP MARVIN FINISHED.");
+  }
+
+  bool ProcessChat() {
+    for (marvin::ChatMessage chat : bot->GetGame().GetCurrentChat()) {
+      std::string name = bot->GetGame().GetPlayer().name;
+      std::string eg_msg = "[ " + name + " ]";
+      std::string eg_packet_loss_msg = "Packet loss too high for you to enter the game.";
+      std::string hs_lag_msg = "You are too lagged to play in this arena.";
+
+      bool eg_lag_locked =
+          chat.message.compare(0, 4 + name.size(), eg_msg) == 0 && bot->GetGame().GetZone() == marvin::Zone::ExtremeGames;
+
+      bool eg_locked_in_spec =
+          eg_lag_locked || chat.message == eg_packet_loss_msg && bot->GetGame().GetZone() == marvin::Zone::ExtremeGames;
+
+      bool hs_locked_in_spec = chat.message == hs_lag_msg && bot->GetGame().GetZone() == marvin::Zone::Hyperspace;
+
+      bool disconected = chat.message.compare(0, 9, "WARNING: ") == 0;
+
+      if (chat.type == marvin::ChatType::Arena) {
+        if (disconected || eg_locked_in_spec || hs_locked_in_spec) {
+          PostQuitMessage(0);
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+ private:
+  bool enabled = false;
+  time_point last_update_time;
+  time_point start_time = time_clock::now();
+};
+
 BOOL WINAPI DllMain(HINSTANCE hInst, DWORD dwReason, LPVOID reserved) {
   switch (dwReason) {
-      case DLL_PROCESS_ATTACH: {
-        InitializeMarvin();
-      } break;
-      case DLL_PROCESS_DETACH: {
-        CleanupMarvin();
-      } break;
+    case DLL_PROCESS_ATTACH: {
+      Fuse::Get().RegisterHook(std::make_unique<MarvinHook>());
+    } break;
   }
 
   return TRUE;
 }
-

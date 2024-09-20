@@ -12,6 +12,8 @@
 #include <string>
 #include <thread>
 
+#include <fuse/Fuse.h>
+
 typedef void (*InitFunc)();
 typedef void (*CleanupFunc)();
 
@@ -149,6 +151,8 @@ void MonitorDevFile() {
 BOOL WINAPI DllMain(HINSTANCE hInst, DWORD dwReason, LPVOID reserved) {
   if (dwReason == DLL_PROCESS_ATTACH) {
     hModule = NULL;
+
+    fuse::Fuse::Get().Inject();
 
     g_MarvinPath = GetFolderFilePath(hInst, "Marvin.dll");
 

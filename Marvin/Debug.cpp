@@ -1,27 +1,37 @@
 #include "Debug.h"
 
 #include <ddraw.h>
+#include <fuse/Fuse.h>
 #include <stdarg.h>
-
 
 #include "Types.h"
 
+using namespace fuse;
 
-#pragma comment(lib, "ddraw.lib")
-#pragma comment(lib, "dxguid.lib")
+// TODO: This probably should be rewritten, but it's just updated to adapt into fuse for now.
 
 namespace marvin {
 
 RenderState g_RenderState;
 
-std::ofstream log;
-//LogFile log;
-
+LogFile log;
 
 const bool RenderState::kDisplayDebugText = true;
 
+inline fuse::Vector2f ToFuseVec(const Vector2f& v) {
+  return fuse::Vector2f(v.x, v.y);
+}
+
+inline fuse::render::Color ToFuseColor(COLORREF color) {
+  fuse::render::Color result = {};
+
+  result.value = color;
+
+  return result;
+}
+
 #if DEBUG_RENDER
-//bot crashes when screen moves to bottom edge
+// bot crashes when screen moves to bottom edge
 void RenderWorldLine(Vector2f screenCenterWorldPosition, Vector2f from, Vector2f to, COLORREF color) {
   Vector2f center = GetWindowCenter();
 
@@ -87,42 +97,18 @@ void RenderWorldText(Vector2f screenCenterWorldPosition, const std::string& text
 }
 
 void RenderState::Render() {
-  u32 graphics_addr = *(u32*)(0x4C1AFC) + 0x30;
-  LPDIRECTDRAWSURFACE back_surface = (LPDIRECTDRAWSURFACE) * (u32*)(graphics_addr + 0x44);
+  // This converts the marvin data structures into fuse calls to do the rendering.
+  // This is done here instead of directly in the push calls above because marvin's update pacing differs from the
+  // rendering pace.
 
-  typedef void(__fastcall * RenderTextFunc)(void* This, void* thiscall_garbage, int x, int y, const char* text,
-                                            int zero, int length, u8 alpha);
-
-  RenderTextFunc render_text = (RenderTextFunc)(0x442FE0);
-  void* This = (void*)(graphics_addr);
-
-  HDC hdc;
-  back_surface->GetDC(&hdc);
-
-  // void RenderLine(Vector2f from, Vector2f to, COLORREF color) {
-  //   HDC hdc = GetDC(g_hWnd);
-
-  HGDIOBJ obj = SelectObject(hdc, GetStockObject(DC_PEN));
-
-  // SetDCPenColor(hdc, color);
-
-  for (RenderableLine& renderable : renderable_lines) {
-    SetDCPenColor(hdc, renderable.color);
-    MoveToEx(hdc, (int)renderable.from.x, (int)renderable.from.y, NULL);
-    LineTo(hdc, (int)renderable.to.x, (int)renderable.to.y);
+  for (auto& renderable : renderable_lines) {
+    fuse::Fuse::Get().GetRenderer().PushScreenLine(ToFuseVec(renderable.from), ToFuseVec(renderable.to),
+                                                   ToFuseColor(renderable.color));
   }
 
-  back_surface->ReleaseDC(hdc);
-
-  for (RenderableText& renderable : renderable_texts) {
-    u32 x = (u32)renderable.at.x;
-    u32 y = (u32)renderable.at.y;
-
-    if (renderable.flags & RenderText_Centered) {
-      x -= (u32)((renderable.text.length() / 2.0f) * 8.0f);
-    }
-
-    render_text(This, 0, x, y, renderable.text.c_str(), (int)renderable.color, -1, 1);
+  for (auto& renderable : renderable_texts) {
+    fuse::Fuse::Get().GetRenderer().PushText(renderable.text, ToFuseVec(renderable.at),
+                                             (fuse::render::TextColor)renderable.color, renderable.flags);
   }
 }
 
@@ -150,9 +136,9 @@ void RenderState::RenderDebugText(const std::string& input) {
 #if 0
 template <typename T>
 void RenderState::RenderDebugInBinary(std::string text, T data) {
-    std::bitset<sizeof(T) * 8> bits(data);
-    RenderText(text + bits.to_string(), Vector2f(GetWindowCenter().x + 150.0f, debug_y), TextColor::Pink, 0);
-    debug_y += 12.0f;
+  std::bitset<sizeof(T) * 8> bits(data);
+  RenderText(text + bits.to_string(), Vector2f(GetWindowCenter().x + 150.0f, debug_y), TextColor::Pink, 0);
+  debug_y += 12.0f;
 }
 #endif
 #if 0
@@ -163,7 +149,7 @@ void RenderState::RenderDebugInBinary(const std::string& input, unsigned somethi
 
   for (int i = 0; i < bit_depth; i++) {
     if (something >> i & 0x1) {
-        result 
+      result
     }
   }
 }
@@ -211,13 +197,13 @@ void RenderPath(Vector2f position, std::vector<Vector2f> path) {
 void RenderState::Render() {}
 
 void RenderDirection(Vector2f screenCenterWorldPosition, Vector2f from, Vector2f direction, float length) {}
-  void RenderWorldLine(Vector2f screenCenterWorldPosition, Vector2f from, Vector2f to, COLORREF color) {}
+void RenderWorldLine(Vector2f screenCenterWorldPosition, Vector2f from, Vector2f to, COLORREF color) {}
 void RenderWorldBox(Vector2f screenCenterWorldPosition, Vector2f position, float size) {}
-  void RenderWorldBox(Vector2f screenCenterWorldPosition, Vector2f box_top_left, Vector2f box_bottom_right,
+void RenderWorldBox(Vector2f screenCenterWorldPosition, Vector2f box_top_left, Vector2f box_bottom_right,
                     COLORREF color) {}
 
-  void RenderWorldTile(Vector2f screenCenterWorldPosition, MapCoord position, COLORREF color) {}
-    void RenderWorldText(Vector2f screenCenterWorldPosition, const std::string& text, const Vector2f& at, TextColor color,
+void RenderWorldTile(Vector2f screenCenterWorldPosition, MapCoord position, COLORREF color) {}
+void RenderWorldText(Vector2f screenCenterWorldPosition, const std::string& text, const Vector2f& at, TextColor color,
                      int flags) {}
 
 void RenderLine(Vector2f from, Vector2f to, COLORREF color) {}

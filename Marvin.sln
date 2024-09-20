@@ -4,12 +4,31 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 17.8.34525.116
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Marvin", "Marvin\Marvin.vcxproj", "{E831374E-0ED7-4810-B434-81360E12866C}"
+	ProjectSection(ProjectDependencies) = postProject
+		{3F591A96-13CA-4701-BDB2-B258C455097C} = {3F591A96-13CA-4701-BDB2-B258C455097C}
+		{828027E4-E721-4317-8ABF-F0E3F2402BD6} = {828027E4-E721-4317-8ABF-F0E3F2402BD6}
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB} = {907F4581-19BE-469B-86F2-2F8ED2F56FDB}
+		{AEF6C68B-485E-443A-9BD6-9397AD0A72A4} = {AEF6C68B-485E-443A-9BD6-9397AD0A72A4}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Injector", "Injector\Injector.vcxproj", "{3F591A96-13CA-4701-BDB2-B258C455097C}"
+	ProjectSection(ProjectDependencies) = postProject
+		{AEF6C68B-485E-443A-9BD6-9397AD0A72A4} = {AEF6C68B-485E-443A-9BD6-9397AD0A72A4}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Injector-Loader", "Injector\Loader\Loader.vcxproj", "{AEF6C68B-485E-443A-9BD6-9397AD0A72A4}"
+	ProjectSection(ProjectDependencies) = postProject
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB} = {907F4581-19BE-469B-86F2-2F8ED2F56FDB}
+	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "fuse-loader", "Fuse\Loader\fuse-loader.vcxproj", "{828027E4-E721-4317-8ABF-F0E3F2402BD6}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "fuse", "lib\fuse\fuse\fuse.vcxproj", "{907F4581-19BE-469B-86F2-2F8ED2F56FDB}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "dsound", "lib\fuse\dsound\dsound.vcxproj", "{828027E4-E721-4317-8ABF-F0E3F2402BD6}"
+	ProjectSection(ProjectDependencies) = postProject
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB} = {907F4581-19BE-469B-86F2-2F8ED2F56FDB}
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "loader", "loader", "{A311B197-2623-49D3-94BE-4B00FA622437}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -43,6 +62,14 @@ Global
 		{AEF6C68B-485E-443A-9BD6-9397AD0A72A4}.Release|x64.Build.0 = Release|x64
 		{AEF6C68B-485E-443A-9BD6-9397AD0A72A4}.Release|x86.ActiveCfg = Release|Win32
 		{AEF6C68B-485E-443A-9BD6-9397AD0A72A4}.Release|x86.Build.0 = Release|Win32
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB}.Debug|x64.ActiveCfg = Debug|x64
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB}.Debug|x64.Build.0 = Debug|x64
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB}.Debug|x86.ActiveCfg = Debug|Win32
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB}.Debug|x86.Build.0 = Debug|Win32
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB}.Release|x64.ActiveCfg = Release|x64
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB}.Release|x64.Build.0 = Release|x64
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB}.Release|x86.ActiveCfg = Release|Win32
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB}.Release|x86.Build.0 = Release|Win32
 		{828027E4-E721-4317-8ABF-F0E3F2402BD6}.Debug|x64.ActiveCfg = Debug|x64
 		{828027E4-E721-4317-8ABF-F0E3F2402BD6}.Debug|x64.Build.0 = Debug|x64
 		{828027E4-E721-4317-8ABF-F0E3F2402BD6}.Debug|x86.ActiveCfg = Debug|Win32
@@ -54,6 +81,12 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{3F591A96-13CA-4701-BDB2-B258C455097C} = {A311B197-2623-49D3-94BE-4B00FA622437}
+		{AEF6C68B-485E-443A-9BD6-9397AD0A72A4} = {A311B197-2623-49D3-94BE-4B00FA622437}
+		{907F4581-19BE-469B-86F2-2F8ED2F56FDB} = {A311B197-2623-49D3-94BE-4B00FA622437}
+		{828027E4-E721-4317-8ABF-F0E3F2402BD6} = {A311B197-2623-49D3-94BE-4B00FA622437}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {FA2D13FF-E47E-4089-AAF0-88F1D3418AFE}
