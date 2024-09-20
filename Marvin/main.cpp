@@ -183,7 +183,8 @@ class MarvinHook final : public HookInjection {
 
       if (chat.type == marvin::ChatType::Arena) {
         if (disconected || eg_locked_in_spec || hs_locked_in_spec) {
-          PostQuitMessage(0);
+          u8* leave_ptr = (u8*)(Fuse::Get().GetGameMemory().game_address + 0x127ec + 0x58c);
+          *leave_ptr = 1;
           return true;
         }
       }
